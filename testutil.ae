@@ -1,0 +1,110 @@
+// testutil.ae — tiny self-contained test harness + fixture builder.
+//
+// A dependency, never an entry: it imports std.* selectively and calls
+// bare (the proven aeo pattern). Every test ENTRY then imports only `model`
+// and `testutil`, pulling in no std module of its own — which sidesteps the
+// Aether footgun where a *selective* `std.X` import in the entry file
+// becomes authoritative for the whole compile unit and collapses a
+// dependency's other std.X functions to raw externs. Keep entries std-free.
+
+exports (
+    tk_new, tk_ok, tk_eq_str, tk_eq_int, tk_report,
+    list_size, list_get,
+    build_fixture, teardown_fixture
+)
+
+import std.collections (string_list_new, string_list_add, string_list_get, string_list_size)
+import std.string (string_compare, string_from_int)
+import std.fs (mkdir_p, write, delete, delete_dir)
+
+extern println(s: string)
+
+// A test run's state is just a string_list of failure messages: empty == green.
+tk_new() -> ptr {
+    return string_list_new()
+}
+
+tk_ok(state: ptr, cond: int, msg: string) {
+    if cond == 1 {
+        println("  ok   ${msg}")
+    } else {
+        println("  FAIL ${msg}")
+        string_list_add(state, msg)
+    }
+}
+
+tk_eq_str(state: ptr, got: string, want: string, msg: string) {
+    eq = 0
+    if string_compare(got, want) == 0 {
+        eq = 1
+    }
+    detail = msg
+    if eq == 0 {
+        detail = "${msg}  (got '${got}' want '${want}')"
+    }
+    tk_ok(state, eq, detail)
+}
+
+tk_eq_int(state: ptr, got: int, want: int, msg: string) {
+    eq = 0
+    if got == want {
+        eq = 1
+    }
+    detail = msg
+    if eq == 0 {
+        g = string_from_int(got)
+        w = string_from_int(want)
+        detail = "${msg}  (got ${g} want ${w})"
+    }
+    tk_ok(state, eq, detail)
+}
+
+// Returns the failure count (0 == all passed) so an entry's main() can hand
+// it straight back as the process exit code.
+tk_report(state: ptr) -> int {
+    n = string_list_size(state)
+    if n == 0 {
+        println("ALL TESTS PASSED")
+    } else {
+        c = string_from_int(n)
+        println("${c} TEST(S) FAILED")
+    }
+    return n
+}
+
+// ---- string_list accessors (so entries needn't import std.collections) ----
+
+list_size(l: ptr) -> int {
+    return string_list_size(l)
+}
+
+list_get(l: ptr, i: int) -> string {
+    return string_list_get(l, i)
+}
+
+// ---- fixture directory --------------------------------------------------
+// A deterministic little tree the model tests read back:
+//   <base>/Banana/      <base>/zebra/        (directories)
+//   <base>/apple.txt     <base>/cherry.md     (files)
+//   <base>/.hidden       (a dotfile the hidden filter must drop)
+// teardown runs first so a crashed prior run can't leave stale entries that
+// skew the counts.
+
+build_fixture(base: string) {
+    teardown_fixture(base)
+    mkdir_p(base)
+    mkdir_p("${base}/Banana")
+    mkdir_p("${base}/zebra")
+    write("${base}/apple.txt", "a")
+    write("${base}/cherry.md", "c")
+    write("${base}/.hidden", "h")
+}
+
+teardown_fixture(base: string) {
+    delete("${base}/apple.txt")
+    delete("${base}/cherry.md")
+    delete("${base}/.hidden")
+    delete_dir("${base}/Banana")
+    delete_dir("${base}/zebra")
+    delete_dir(base)
+}

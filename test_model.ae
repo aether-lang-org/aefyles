@@ -1,0 +1,72 @@
+// test_model.ae — headless tests for the aefyles model.
+//
+// No display, no aether_ui. Imports ONLY `model` and `testutil` (both
+// dependencies), so this entry pulls in no std module itself — see
+// testutil.ae for why that matters. main() returns the failure count, so the
+// process exit code is 0 exactly when every assertion passed.
+//
+//   ae build test_model.ae -o build/test_model && ./build/test_model
+
+import model
+import testutil
+
+@extern("exit") proc_exit(code: int)
+
+main() {
+    t = testutil.tk_new()
+
+    // ---- entry encoding round-trips ----
+    d = model.entry_make(1, "Photos")
+    f = model.entry_make(0, "notes.txt")
+    testutil.tk_eq_int(t, model.entry_is_dir(d), 1, "entry_is_dir(dir) == 1")
+    testutil.tk_eq_int(t, model.entry_is_dir(f), 0, "entry_is_dir(file) == 0")
+    testutil.tk_eq_str(t, model.entry_name(d), "Photos", "entry_name(dir)")
+    testutil.tk_eq_str(t, model.entry_name(f), "notes.txt", "entry_name(file)")
+
+    // ---- hidden filter (fyles' u.Name()[0] != '.') ----
+    testutil.tk_eq_int(t, model.is_hidden(".bashrc"), 1, "dotfile is hidden")
+    testutil.tk_eq_int(t, model.is_hidden("README"), 0, "plain file not hidden")
+
+    // ---- ordering rule: dirs before files, then case-insensitive name ----
+    dz = model.entry_make(1, "zzz")
+    fa = model.entry_make(0, "aaa")
+    testutil.tk_ok(t, model.entry_cmp(dz, fa) < 0, "directory sorts before file")
+    ua = model.entry_make(0, "Apple")
+    lb = model.entry_make(0, "banana")
+    testutil.tk_ok(t, model.entry_cmp(ua, lb) < 0, "case-insensitive: Apple < banana")
+    sa = model.entry_make(1, "alpha")
+    sb = model.entry_make(1, "alpha")
+    testutil.tk_ok(t, model.entry_cmp(sa, sb) == 0, "equal entries compare equal")
+
+    // ---- navigation arithmetic ----
+    testutil.tk_eq_int(t, model.is_root("/"), 1, "/ is root")
+    testutil.tk_eq_int(t, model.is_root("/home"), 0, "/home is not root")
+    testutil.tk_eq_str(t, model.parent_of("/home/nic/Documents"), "/home/nic", "parent_of nested")
+    testutil.tk_eq_str(t, model.parent_of("/"), "/", "parent_of root stays root")
+    testutil.tk_eq_str(t, model.display_name("/home/nic/Documents"), "Documents", "display_name nested")
+    testutil.tk_eq_str(t, model.display_name("/"), "/", "display_name root")
+
+    // ---- integration: read a real fixture directory ----
+    base = "/tmp/aefyles_fixture"
+    testutil.build_fixture(base)
+
+    vis = model.read_entries(base, 0)
+    testutil.tk_eq_int(t, testutil.list_size(vis), 4, "4 visible entries (hidden excluded)")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 0)), "Banana", "[0] dir Banana")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(vis, 0)), 1, "[0] tagged dir")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 1)), "zebra", "[1] dir zebra")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 2)), "apple.txt", "[2] file apple.txt")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(vis, 2)), 0, "[2] tagged file")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 3)), "cherry.md", "[3] file cherry.md")
+
+    all = model.read_entries(base, 1)
+    testutil.tk_eq_int(t, testutil.list_size(all), 5, "5 entries with hidden shown")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(all, 2)), ".hidden", ".hidden sorts first among files")
+
+    missing = model.read_entries("/tmp/aefyles_nope_xyz_404", 0)
+    testutil.tk_eq_int(t, testutil.list_size(missing), 0, "unreadable dir -> empty list")
+
+    testutil.teardown_fixture(base)
+
+    proc_exit(testutil.tk_report(t))
+}

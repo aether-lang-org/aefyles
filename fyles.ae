@@ -1,0 +1,181 @@
+// fyles.ae — a file browser, in Aether UI.
+//
+// A from-scratch port of FyshOS/fyles (a Fyne file browser, written in Go)
+// to Aether UI's declarative builder DSL. Fyne is imperative — its panel
+// mutates widgets in place on every directory change. Aether UI is
+// declarative, so the port splits cleanly in two:
+//
+//   * model.ae  — pure, headless, fully unit-tested: a directory becomes a
+//                 sorted, filtered list of (kind, name) entries, plus the
+//                 path arithmetic for navigating. No UI. (see test_model.ae)
+//   * fyles.ae  — this file: the whole interface as one readable script.
+//                 The window is described declaratively; a directory change
+//                 is "read the model again and repaint the grid".
+//
+// Layout (one window): a toolbar (Home / Up / live path), a Favourites
+// sidebar (Home + the user dirs), and a scrolling grid of the current
+// directory — folders first, then files, each a button. Click a folder to
+// descend, a file to open it with the OS default app.
+//
+//   ./build.sh fyles.ae && ./build/fyles [start-directory]
+
+import aether_ui
+import model
+import glue
+
+extern println(s: string)
+
+// Grid columns in the file pane, and the AetherUIDriver test port (the
+// built-in HTTP automation server — see test_app.sh).
+const COLS = 4
+const TEST_PORT = 9223
+
+// ---- navigation -------------------------------------------------------
+// activate() is the one place a click resolves: descend into a directory
+// (move the shared cwd, update the path label, repaint the grid) or open a
+// file with the OS. go_up() is just activate() on the parent.
+//
+// grid_cell and label_cell are forward-reference cells holding the grid and
+// path-label widget handles; cwd_cell holds the current directory. All three
+// are shared pointers so these top-level functions — reached from every
+// button's by-value-captured callback — act on the one live UI.
+
+activate(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, target: string, is_dir: int) {
+    if is_dir == 1 {
+        glue.cwd_set(cwd_cell, target)
+        aether_ui.set_text(glue.cell_get(label_cell), target)
+        repaint(grid_cell, label_cell, cwd_cell)
+    } else {
+        glue.open_path(target)
+    }
+}
+
+go_up(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr) {
+    here = glue.cwd_get(cwd_cell)
+    activate(grid_cell, label_cell, cwd_cell, model.parent_of(here), 1)
+}
+
+// A folder/file glyph in front of the name, so the grid reads at a glance.
+cell_label(name: string, is_dir: int) -> string {
+    if is_dir == 1 {
+        return "📁  ${name}"
+    }
+    return "📄  ${name}"
+}
+
+// Place one entry button into the grid at flat index `slot` (row-major).
+add_cell(grid_handle: int, grid_cell: ptr, label_cell: ptr, cwd_cell: ptr,
+         slot: int, label: string, target: string, is_dir: int) {
+    cell = aether_ui.btn(label) callback {
+        activate(grid_cell, label_cell, cwd_cell, target, is_dir)
+    }
+    row = slot / COLS
+    col = slot - row * COLS
+    aether_ui.grid_place(grid_handle, cell, row, col, 1, 1)
+}
+
+// ---- repaint ----------------------------------------------------------
+// fyles' Panel.SetDir, the declarative way: clear the grid, then rebuild it
+// from the model for the current directory. A leading "⬆ .." cell (unless
+// already at the filesystem root) navigates to the parent — fyles' "(Parent)"
+// row. Everything else is whatever model.read_entries returns, in order.
+
+repaint(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr) {
+    grid_handle = glue.cell_get(grid_cell)
+    aether_ui.clear_children(grid_handle)
+
+    here = glue.cwd_get(cwd_cell)
+    slot = 0
+
+    if model.is_root(here) == 0 {
+        add_cell(grid_handle, grid_cell, label_cell, cwd_cell,
+                 slot, "⬆  ..", model.parent_of(here), 1)
+        slot = slot + 1
+    }
+
+    listing = model.read_entries(here, 0)
+    n = model.entries_len(listing)
+    for (i = 0; i < n; i = i + 1) {
+        e = model.entries_at(listing, i)
+        name = model.entry_name(e)
+        is_dir = model.entry_is_dir(e)
+        target = model.child_path(here, name)
+        add_cell(grid_handle, grid_cell, label_cell, cwd_cell,
+                 slot, cell_label(name, is_dir), target, is_dir)
+        slot = slot + 1
+    }
+}
+
+// ---- the window -------------------------------------------------------
+
+main() {
+    start = glue.start_dir()
+    cwd_cell = glue.cwd_new(start)
+    grid_cell = glue.cell_new(0)
+    label_cell = glue.cell_new(0)
+
+    // Favourite destinations, resolved once and captured by each button.
+    home_p = model.home_dir()
+    docs_p = model.fav_path("Documents")
+    down_p = model.fav_path("Downloads")
+    music_p = model.fav_path("Music")
+    pics_p = model.fav_path("Pictures")
+    vids_p = model.fav_path("Videos")
+
+    aether_ui.window("aefyles", 880, 560) {
+        aether_ui.vstack(0) {
+
+            // --- toolbar: Home | Up | live path ---
+            aether_ui.hstack(8) {
+                aether_ui.btn("⌂  Home") callback {
+                    activate(grid_cell, label_cell, cwd_cell, home_p, 1)
+                }
+                aether_ui.btn("⬆  Up") callback {
+                    go_up(grid_cell, label_cell, cwd_cell)
+                }
+                path_label = aether_ui.text(start)
+                glue.cell_set(label_cell, path_label)
+                aether_ui.spacer()
+            }
+            aether_ui.divider()
+
+            // --- body: Favourites sidebar | file grid ---
+            aether_ui.hstack(0) {
+
+                aether_ui.vstack(4) {
+                    aether_ui.text("Favourites")
+                    aether_ui.divider()
+                    aether_ui.btn("🏠  Home") callback {
+                        activate(grid_cell, label_cell, cwd_cell, home_p, 1)
+                    }
+                    aether_ui.btn("📄  Documents") callback {
+                        activate(grid_cell, label_cell, cwd_cell, docs_p, 1)
+                    }
+                    aether_ui.btn("⬇  Downloads") callback {
+                        activate(grid_cell, label_cell, cwd_cell, down_p, 1)
+                    }
+                    aether_ui.btn("♪  Music") callback {
+                        activate(grid_cell, label_cell, cwd_cell, music_p, 1)
+                    }
+                    aether_ui.btn("🖼  Pictures") callback {
+                        activate(grid_cell, label_cell, cwd_cell, pics_p, 1)
+                    }
+                    aether_ui.btn("🎬  Videos") callback {
+                        activate(grid_cell, label_cell, cwd_cell, vids_p, 1)
+                    }
+                    aether_ui.spacer()
+                }
+
+                aether_ui.scrollview() {
+                    file_grid = aether_ui.grid(COLS, 12, 12) {
+                    }
+                    glue.cell_set(grid_cell, file_grid)
+                }
+            }
+        }
+
+        // Fill the grid for the starting directory, then arm the test server.
+        repaint(grid_cell, label_cell, cwd_cell)
+        aether_ui.enable_test_server(TEST_PORT)
+    }
+}

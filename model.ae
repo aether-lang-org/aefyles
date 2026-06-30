@@ -1,0 +1,207 @@
+// model.ae — aefyles file-browser core model.
+//
+// Pure, UI-free logic for the Aether UI port of FyshOS/fyles: read a
+// directory into a sorted, filtered list of entries, plus the path
+// arithmetic for navigation (parent, display name, favourites).
+//
+// Deliberately carries NO aether_ui import, so it unit-tests headlessly
+// (see test_model.ae). fyles is imperative — its heart is `Panel.SetDir`,
+// which mutates widgets in place. Here that becomes a pure `read_entries`:
+// the DSL in fyles.ae just renders whatever this function returns, and a
+// directory change is "read again, repaint". That split is the whole point
+// of the port — the model is provably correct on its own.
+
+exports (
+    entry_make, entry_is_dir, entry_name,
+    is_hidden, read_entries, sort_entries, entry_cmp,
+    entries_len, entries_at, child_path,
+    parent_of, display_name, is_root, home_dir, fav_path
+)
+
+import std.fs (list_dir, file_stat, dir_list_count, dir_list_get, dir_list_free)
+import std.collections (string_list_new, string_list_add, string_list_get, string_list_set, string_list_size)
+import std.string (string_length, string_substring, string_starts_with, string_compare, string_to_lower, string_concat)
+import std.path (path_basename, path_dirname, path_join)
+import std.os (os_getenv)
+
+// fs.file_stat kind tags (std/fs/aether_fs.c): 1=file, 2=dir, 3=symlink, 4=other.
+const KIND_DIR = 2
+
+// ---- Entry encoding ---------------------------------------------------
+// An entry is one string: byte 0 is the kind tag ('d' = directory,
+// 'f' = file), the rest is the display name. This keeps a listing a plain
+// std.collections string_list — trivially testable, no hand-managed structs
+// — while still carrying the dir/file bit the UI needs to choose an icon and
+// a click action. (Names cannot be empty and POSIX names cannot contain a
+// leading-byte ambiguity here because the tag is positional, not in-band.)
+
+entry_make(is_dir: int, name: string) -> string {
+    tag = "f"
+    if is_dir == 1 {
+        tag = "d"
+    }
+    return string_concat(tag, name)
+}
+
+entry_is_dir(e: string) -> int {
+    head = string_substring(e, 0, 1)
+    if string_compare(head, "d") == 0 {
+        return 1
+    }
+    return 0
+}
+
+entry_name(e: string) -> string {
+    return string_substring(e, 1, string_length(e))
+}
+
+// ---- Filtering --------------------------------------------------------
+// A "hidden" name is the Unix dotfile convention — exactly fyles' `filter`
+// (`u.Name()[0] != '.'`). `.` and `..` never reach here: fs.list_dir's
+// readdir loop already drops them.
+
+is_hidden(name: string) -> int {
+    return string_starts_with(name, ".")
+}
+
+// ---- Directory read ---------------------------------------------------
+// fyles' Panel.SetDir, distilled to a pure function: list the directory,
+// drop hidden names unless asked, tag each entry by kind, sort. Returns a
+// std.collections string_list of encoded entries — empty on any read error,
+// matching fyles' "LogError and carry on" (the UI shows an empty panel
+// rather than crashing).
+
+read_entries(path: string, show_hidden: int) -> ptr {
+    out = string_list_new()
+    listing, err = list_dir(path)
+    if string_compare(err, "") != 0 {
+        return out
+    }
+    n = dir_list_count(listing)
+    i = 0
+    while i < n {
+        name = dir_list_get(listing, i)
+        i = i + 1
+        show = 1
+        if is_hidden(name) == 1 {
+            if show_hidden == 0 {
+                show = 0
+            }
+        }
+        if show == 1 {
+            full = path_join(path, name)
+            kind, _size, _mtime, _serr = file_stat(full)
+            is_dir = 0
+            if kind == KIND_DIR {
+                is_dir = 1
+            }
+            _added = string_list_add(out, entry_make(is_dir, name))
+        }
+    }
+    dir_list_free(listing)
+    sort_entries(out)
+    return out
+}
+
+// ---- Sorting ----------------------------------------------------------
+// Order: directories before files, then case-insensitive by name — the
+// familiar file-manager ordering. entry_cmp is exported so the test asserts
+// the rule directly, independent of any directory on disk. Insertion sort
+// (no early break — directory listings are small and this keeps the model
+// free of `break`/`continue`); stable for equal keys.
+
+entry_cmp(a: string, b: string) -> int {
+    da = entry_is_dir(a)
+    db = entry_is_dir(b)
+    if da != db {
+        if da == 1 {
+            return -1
+        }
+        return 1
+    }
+    la = string_to_lower(entry_name(a))
+    lb = string_to_lower(entry_name(b))
+    return string_compare(la, lb)
+}
+
+sort_entries(listing: ptr) {
+    n = string_list_size(listing)
+    i = 1
+    while i < n {
+        j = i
+        while j > 0 {
+            a = string_list_get(listing, j - 1)
+            b = string_list_get(listing, j)
+            if entry_cmp(a, b) > 0 {
+                // string_list_get returns the slot's internal pointer and
+                // string_list_set frees the slot it overwrites — so copy
+                // slot j-1 out (string_concat allocates fresh) BEFORE the
+                // first set frees it, else the second set reads freed bytes.
+                a_copy = string_concat(a, "")
+                string_list_set(listing, j - 1, b)
+                string_list_set(listing, j, a_copy)
+            }
+            j = j - 1
+        }
+        i = i + 1
+    }
+}
+
+// ---- Listing accessors ------------------------------------------------
+// So a UI can walk read_entries' result (and the entry tests stay the
+// model's own job) without importing std.collections itself.
+
+entries_len(listing: ptr) -> int {
+    return string_list_size(listing)
+}
+
+entries_at(listing: ptr, i: int) -> string {
+    return string_list_get(listing, i)
+}
+
+// The absolute path of `name` inside `dir` — what a click on that entry
+// navigates to (directory) or opens (file).
+child_path(dir: string, name: string) -> string {
+    return path_join(dir, name)
+}
+
+// ---- Navigation arithmetic --------------------------------------------
+// fyles climbs the tree with storage.Parent and trims a trailing slash;
+// the filesystem root "/" is its own parent (you cannot go above it).
+
+is_root(path: string) -> int {
+    if string_compare(path, "/") == 0 {
+        return 1
+    }
+    return 0
+}
+
+parent_of(path: string) -> string {
+    if is_root(path) == 1 {
+        return "/"
+    }
+    return path_dirname(path)
+}
+
+display_name(path: string) -> string {
+    if is_root(path) == 1 {
+        return "/"
+    }
+    return path_basename(path)
+}
+
+// ---- Favourites -------------------------------------------------------
+// fyles seeds its tree with Home + the XDG user dirs. We resolve them off
+// $HOME; with no $HOME we fall back to "/" so the app still opens.
+
+home_dir() -> string {
+    h = os_getenv("HOME")
+    if h == 0 {
+        return "/"
+    }
+    return h
+}
+
+fav_path(name: string) -> string {
+    return path_join(home_dir(), name)
+}

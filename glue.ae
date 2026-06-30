@@ -1,0 +1,89 @@
+// glue.ae — the thin, non-UI glue between the pure model and the live app.
+//
+// A dependency (never an entry): it imports std.* selectively and calls
+// bare, so fyles.ae imports only `aether_ui`, `model`, and `glue` and stays
+// free of any std import of its own (see testutil.ae for why that matters).
+//
+// Three jobs, none of them UI:
+//   * shared mutable cells — aether_ui callbacks capture by value, so the
+//     things navigation mutates (the current directory; the grid / path
+//     handles that are forward-referenced) must live behind shared pointers.
+//   * launching a file with the OS default app (fyles' fyles.Open).
+//   * picking the directory to open on start (fyles' os.Args loop).
+
+exports (
+    cell_new, cell_get, cell_set,
+    cwd_new, cwd_get, cwd_set,
+    open_path, start_dir
+)
+
+import std.collections (string_list_new, string_list_add, string_list_get, string_list_set)
+import std.list (list_new, list_add, list_free)
+import std.os (run_capture, aether_args_count, aether_args_get, os_getenv)
+
+// ---- forward-reference cells -----------------------------------------
+// ref(...) is a compiler builtin (a heap intptr_t). We wrap it as cell_*
+// purely so the app reads in plain words and never has to know it's a ref.
+// Used to hold the grid and path-label widget handles, which the toolbar
+// callbacks must reach even though they're built before those widgets exist.
+
+cell_new(v: int) -> ptr {
+    return ref(v)
+}
+
+cell_get(c: ptr) -> int {
+    return ref_get(c)
+}
+
+cell_set(c: ptr, v: int) {
+    ref_set(c, v)
+}
+
+// ---- shared current-directory cell -----------------------------------
+// A one-slot string_list is the string analog of a ref cell: every closure
+// captures the same pointer, so the toolbar, the favourites and every file
+// cell all read and move the one current directory.
+
+cwd_new(initial: string) -> ptr {
+    box = string_list_new()
+    string_list_add(box, initial)
+    return box
+}
+
+cwd_get(box: ptr) -> string {
+    return string_list_get(box, 0)
+}
+
+cwd_set(box: ptr, value: string) {
+    string_list_set(box, 0, value)
+}
+
+// ---- open a file with the OS default app -----------------------------
+// fyles shells out to xdg-open (Linux); the macOS AppKit build uses
+// `open`. argv form (not a shell string) so paths with spaces or quotes
+// are passed verbatim — no shell-quoting hazard. `open` hands off to
+// LaunchServices and exits immediately, so this does not block the UI.
+
+open_path(path: string) {
+    av = list_new()
+    list_add(av, path)
+    _out, _status, _err = run_capture("/usr/bin/open", av, null)
+    list_free(av)
+}
+
+// ---- starting directory ----------------------------------------------
+// fyles opens os.Args[1] if given, else the working directory. Here: the
+// first CLI argument if present, else $HOME, else "/" so the app always
+// opens somewhere listable.
+
+start_dir() -> string {
+    n = aether_args_count()
+    if n > 1 {
+        return aether_args_get(1)
+    }
+    h = os_getenv("HOME")
+    if h == 0 {
+        return "/"
+    }
+    return h
+}

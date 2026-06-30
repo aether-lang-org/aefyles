@@ -1,0 +1,8 @@
+# Build artifacts (binaries + generated C live here; never committed)
+build/
+
+# Aether build cache
+.aether/
+
+# macOS
+.DS_Store
