@@ -98,8 +98,15 @@ its "Under Remote Control" banner) — off by default, so a normal run is clean.
   Pictures, Videos).
 - **File grid** — the current directory: folders first (blue cards), then
   files, sorted case-insensitively, dotfiles hidden, with a `⬆  ..` cell to go
-  up. Click a folder to descend; click a file to open it with the OS default
-  app (`open` on macOS, `xdg-open` on Linux).
+  up. Cards brighten on hover; an empty directory shows an "empty" message.
+  Click a folder to descend; click a file to open it with the OS default app
+  (`open` on macOS, `xdg-open` on Linux).
+
+**Performance.** The listing sort is a stable O(n log n) bottom-up merge sort
+(`model.ae`), so a directory with tens of thousands of entries sorts in
+milliseconds. The one cost left is a `stat(2)` per entry to tell a directory
+from a file — `std.fs.list_dir` returns only names, dropping the `d_type`
+`readdir(2)` already provides ([filed upstream](https://github.com/aether-lang-org/aether/issues)).
 
 ### Notes & limitations
 

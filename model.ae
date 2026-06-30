@@ -19,7 +19,7 @@ exports (
 )
 
 import std.fs (list_dir, file_stat, dir_list_count, dir_list_get, dir_list_free)
-import std.collections (string_list_new, string_list_add, string_list_get, string_list_set, string_list_size)
+import std.collections (string_list_new, string_list_add, string_list_get, string_list_set, string_list_size, string_list_free)
 import std.string (string_length, string_substring, string_starts_with, string_compare, string_to_lower, string_concat)
 import std.path (path_basename, path_dirname, path_join)
 import std.os (os_getenv)
@@ -106,9 +106,7 @@ read_entries(path: string, show_hidden: int) -> ptr {
 // ---- Sorting ----------------------------------------------------------
 // Order: directories before files, then case-insensitive by name — the
 // familiar file-manager ordering. entry_cmp is exported so the test asserts
-// the rule directly, independent of any directory on disk. Insertion sort
-// (no early break — directory listings are small and this keeps the model
-// free of `break`/`continue`); stable for equal keys.
+// the rule directly, independent of any directory on disk.
 
 entry_cmp(a: string, b: string) -> int {
     da = entry_is_dir(a)
@@ -124,26 +122,90 @@ entry_cmp(a: string, b: string) -> int {
     return string_compare(la, lb)
 }
 
+// Stable bottom-up merge sort — O(n log n) comparisons and copies, vs the
+// O(n^2) of insertion sort (a directory can hold tens of thousands of
+// entries). Merge reads from one buffer and writes the other, so there's no
+// in-slot swap and none of the read-after-free that aliasing get/set causes.
+// (std.collections has no string_list sort; see the upstream issue.)
 sort_entries(listing: ptr) {
     n = string_list_size(listing)
-    i = 1
+    if n < 2 {
+        return
+    }
+    // scratch is a same-length sibling buffer (independent string copies).
+    scratch = string_list_new()
+    i = 0
     while i < n {
-        j = i
-        while j > 0 {
-            a = string_list_get(listing, j - 1)
-            b = string_list_get(listing, j)
-            if entry_cmp(a, b) > 0 {
-                // string_list_get returns the slot's internal pointer and
-                // string_list_set frees the slot it overwrites — so copy
-                // slot j-1 out (string_concat allocates fresh) BEFORE the
-                // first set frees it, else the second set reads freed bytes.
-                a_copy = string_concat(a, "")
-                string_list_set(listing, j - 1, b)
-                string_list_set(listing, j, a_copy)
-            }
-            j = j - 1
-        }
+        e = string_list_get(listing, i)
+        ec = string_concat(e, "")
+        _added = string_list_add(scratch, ec)
         i = i + 1
+    }
+    // `in_listing` tracks which buffer currently holds the live data.
+    in_listing = 1
+    width = 1
+    while width < n {
+        if in_listing == 1 {
+            _merge_pass(listing, scratch, n, width)
+            in_listing = 0
+        } else {
+            _merge_pass(scratch, listing, n, width)
+            in_listing = 1
+        }
+        width = width + width
+    }
+    if in_listing == 0 {
+        j = 0
+        while j < n {
+            v = string_list_get(scratch, j)
+            string_list_set(listing, j, v)
+            j = j + 1
+        }
+    }
+    string_list_free(scratch)
+}
+
+// One merge pass: merge adjacent runs of `width` from src into dst.
+_merge_pass(src: ptr, dst: ptr, n: int, width: int) {
+    i = 0
+    while i < n {
+        lo = i
+        mid = i + width
+        if mid > n {
+            mid = n
+        }
+        hi = i + width + width
+        if hi > n {
+            hi = n
+        }
+        l = lo
+        r = mid
+        k = lo
+        while k < hi {
+            take_left = 0
+            if l < mid {
+                if r >= hi {
+                    take_left = 1
+                } else {
+                    a = string_list_get(src, l)
+                    b = string_list_get(src, r)
+                    if entry_cmp(a, b) <= 0 {
+                        take_left = 1
+                    }
+                }
+            }
+            if take_left == 1 {
+                vl = string_list_get(src, l)
+                string_list_set(dst, k, vl)
+                l = l + 1
+            } else {
+                vr = string_list_get(src, r)
+                string_list_set(dst, k, vr)
+                r = r + 1
+            }
+            k = k + 1
+        }
+        i = i + width + width
     }
 }
 

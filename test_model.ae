@@ -51,17 +51,23 @@ main() {
     testutil.build_fixture(base)
 
     vis = model.read_entries(base, 0)
-    testutil.tk_eq_int(t, testutil.list_size(vis), 4, "4 visible entries (hidden excluded)")
-    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 0)), "Banana", "[0] dir Banana")
+    testutil.tk_eq_int(t, testutil.list_size(vis), 8, "8 visible entries (hidden excluded)")
+    // dirs first, case-insensitive: alpha, Beta, Gamma
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 0)), "alpha", "[0] dir alpha")
     testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(vis, 0)), 1, "[0] tagged dir")
-    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 1)), "zebra", "[1] dir zebra")
-    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 2)), "apple.txt", "[2] file apple.txt")
-    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(vis, 2)), 0, "[2] tagged file")
-    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 3)), "cherry.md", "[3] file cherry.md")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 1)), "Beta", "[1] dir Beta")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 2)), "Gamma", "[2] dir Gamma")
+    // then files, case-insensitive: Apple.md, Berry.log, cherry.csv, mango.dat, zoo.txt
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 3)), "Apple.md", "[3] file Apple.md")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(vis, 3)), 0, "[3] tagged file")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 4)), "Berry.log", "[4] file Berry.log")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 5)), "cherry.csv", "[5] file cherry.csv")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 6)), "mango.dat", "[6] file mango.dat")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(vis, 7)), "zoo.txt", "[7] file zoo.txt")
 
     all = model.read_entries(base, 1)
-    testutil.tk_eq_int(t, testutil.list_size(all), 5, "5 entries with hidden shown")
-    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(all, 2)), ".hidden", ".hidden sorts first among files")
+    testutil.tk_eq_int(t, testutil.list_size(all), 9, "9 entries with hidden shown")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(all, 3)), ".secret", ".secret sorts first among files")
 
     missing = model.read_entries("/tmp/aefyles_nope_xyz_404", 0)
     testutil.tk_eq_int(t, testutil.list_size(missing), 0, "unreadable dir -> empty list")

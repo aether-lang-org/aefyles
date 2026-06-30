@@ -97,6 +97,12 @@ for x in w:
 ' "$1"
 }
 click() { curl -s -X POST --max-time 4 "http://127.0.0.1:$PORT/widget/$1/click" >/dev/null; sleep 0.6; }
+# yes if any text widget currently reads as the empty-folder message.
+empty_present() {
+    curl -s --max-time 4 "http://127.0.0.1:$PORT/widgets" | python3 -c '
+import sys, json
+print("yes" if any(x["type"] == "text" and "empty" in x["text"].lower() for x in json.load(sys.stdin)) else "no")'
+}
 
 EXPECT_FULL=$'..\nAlpha\nBeta\nzed\nnotes.md\nreadme.txt'
 
@@ -107,6 +113,7 @@ check "grid shows folders-first, files next, hidden excluded, parent cell on top
 click "$(cell_id 'Alpha')"
 check "descended into Alpha (path label moved)" "$(extract path)" "$FX/Alpha"
 check "empty Alpha shows only the parent cell" "$(extract cells)" ".."
+check "empty folder shows the empty-state message" "$(empty_present)" "yes"
 
 click "$(cell_id '..')"
 check "'⬆ ..' climbed back to the fixture root" "$(extract path)" "$FX"

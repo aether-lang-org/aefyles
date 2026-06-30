@@ -83,28 +83,37 @@ list_get(l: ptr, i: int) -> string {
 }
 
 // ---- fixture directory --------------------------------------------------
-// A deterministic little tree the model tests read back:
-//   <base>/Banana/      <base>/zebra/        (directories)
-//   <base>/apple.txt     <base>/cherry.md     (files)
-//   <base>/.hidden       (a dotfile the hidden filter must drop)
+// A deterministic tree the model tests read back. Eight visible entries with
+// mixed case exercise the merge sort across several passes:
+//   dirs : alpha  Beta  Gamma          (case-insensitive: alpha < Beta < Gamma)
+//   files: Apple.md Berry.log cherry.csv mango.dat zoo.txt
+//   <base>/.secret  (a dotfile the hidden filter must drop)
 // teardown runs first so a crashed prior run can't leave stale entries that
 // skew the counts.
 
 build_fixture(base: string) {
     teardown_fixture(base)
     mkdir_p(base)
-    mkdir_p("${base}/Banana")
-    mkdir_p("${base}/zebra")
-    write("${base}/apple.txt", "a")
-    write("${base}/cherry.md", "c")
-    write("${base}/.hidden", "h")
+    mkdir_p("${base}/Beta")
+    mkdir_p("${base}/alpha")
+    mkdir_p("${base}/Gamma")
+    write("${base}/zoo.txt", "z")
+    write("${base}/Apple.md", "a")
+    write("${base}/mango.dat", "m")
+    write("${base}/Berry.log", "b")
+    write("${base}/cherry.csv", "c")
+    write("${base}/.secret", "s")
 }
 
 teardown_fixture(base: string) {
-    delete("${base}/apple.txt")
-    delete("${base}/cherry.md")
-    delete("${base}/.hidden")
-    delete_dir("${base}/Banana")
-    delete_dir("${base}/zebra")
+    delete("${base}/zoo.txt")
+    delete("${base}/Apple.md")
+    delete("${base}/mango.dat")
+    delete("${base}/Berry.log")
+    delete("${base}/cherry.csv")
+    delete("${base}/.secret")
+    delete_dir("${base}/Beta")
+    delete_dir("${base}/alpha")
+    delete_dir("${base}/Gamma")
     delete_dir(base)
 }

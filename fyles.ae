@@ -38,38 +38,81 @@ const COLS = 4
 // so default control backgrounds are dark and default text is light; we lean
 // into that instead of fighting it. Light text everywhere (the favourites'
 // labels only render when the title colour is light on these styled buttons).
+//
+// Backgrounds are split into their own bg-only setters so `on_hover` can
+// re-tint a widget on mouse enter/exit WITHOUT re-running the full styler —
+// re-calling width()/height() would stack a fresh constraint every hover.
+// on_hover's closure receives 1 on enter and 0 on exit, which is exactly the
+// "hovered" flag, so the handler is just `_bg(h, entered)`.
+
+_nav_bg(h: int, hover: int) {
+    if hover == 1 {
+        aether_ui.style_bg_color(h, 0.34, 0.58, 0.98, 1.0)
+    } else {
+        aether_ui.style_bg_color(h, 0.23, 0.51, 0.96, 1.0)
+    }
+}
+
+_sidebar_bg(h: int, hover: int) {
+    if hover == 1 {
+        aether_ui.style_bg_color(h, 0.27, 0.30, 0.37, 1.0)
+    } else {
+        aether_ui.style_bg_color(h, 0.20, 0.22, 0.27, 1.0)
+    }
+}
+
+_cell_bg(h: int, is_dir: int, hover: int) {
+    if is_dir == 1 {
+        if hover == 1 {
+            aether_ui.style_bg_color(h, 0.28, 0.43, 0.64, 1.0)
+        } else {
+            aether_ui.style_bg_color(h, 0.20, 0.31, 0.48, 1.0)
+        }
+    } else {
+        if hover == 1 {
+            aether_ui.style_bg_color(h, 0.27, 0.29, 0.35, 1.0)
+        } else {
+            aether_ui.style_bg_color(h, 0.19, 0.20, 0.24, 1.0)
+        }
+    }
+}
 
 // Accent nav button (Home / Up) in the sidebar.
 style_nav_btn(h: int) {
-    aether_ui.style_bg_color(h, 0.23, 0.51, 0.96, 1.0)
+    _nav_bg(h, 0)
     aether_ui.style_text_color(h, 1.0, 1.0, 1.0)
     aether_ui.style_corner_radius(h, 8.0)
     aether_ui.style_font_size(h, 13.0)
     aether_ui.height(h, 34)
+    aether_ui.on_hover(h) callback |entered: int| {
+        _nav_bg(h, entered)
+    }
 }
 
 // A flat favourites row.
 style_sidebar_btn(h: int) {
-    aether_ui.style_bg_color(h, 0.20, 0.22, 0.27, 1.0)
+    _sidebar_bg(h, 0)
     aether_ui.style_text_color(h, 0.90, 0.92, 0.96)
     aether_ui.style_corner_radius(h, 8.0)
     aether_ui.style_font_size(h, 13.0)
     aether_ui.height(h, 34)
+    aether_ui.on_hover(h) callback |entered: int| {
+        _sidebar_bg(h, entered)
+    }
 }
 
 // A folder/file card. Folders get a blue tint, files a neutral slate, so the
-// grid reads by kind at a glance.
+// grid reads by kind at a glance; both brighten on hover.
 style_cell(h: int, is_dir: int) {
-    if is_dir == 1 {
-        aether_ui.style_bg_color(h, 0.20, 0.31, 0.48, 1.0)
-    } else {
-        aether_ui.style_bg_color(h, 0.19, 0.20, 0.24, 1.0)
-    }
+    _cell_bg(h, is_dir, 0)
     aether_ui.style_text_color(h, 0.90, 0.92, 0.96)
     aether_ui.style_corner_radius(h, 10.0)
     aether_ui.style_font_size(h, 13.0)
     aether_ui.width(h, 158)
     aether_ui.height(h, 46)
+    aether_ui.on_hover(h) callback |entered: int| {
+        _cell_bg(h, is_dir, entered)
+    }
 }
 
 // A folder/file glyph in front of the name, so the grid reads at a glance.
@@ -147,6 +190,19 @@ repaint(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr) {
                  slot, cell_label(name, is_dir), target, is_dir)
         slot = slot + 1
     }
+
+    // Empty-directory affordance: a muted message spanning the row below the
+    // parent cell (fyles just shows a blank panel — this reads better).
+    if n == 0 {
+        empty = aether_ui.text("This folder is empty")
+        aether_ui.style_text_color(empty, 0.50, 0.54, 0.62)
+        aether_ui.style_font_size(empty, 14)
+        erow = slot / COLS
+        if slot - erow * COLS > 0 {
+            erow = erow + 1
+        }
+        aether_ui.grid_place(grid_handle, empty, erow, 0, 1, COLS)
+    }
 }
 
 // ---- the window -------------------------------------------------------
@@ -175,6 +231,12 @@ main() {
         root_v = aether_ui.hstack(0) {
 
             sidebar = aether_ui.vstack(8) {
+                brand = aether_ui.text("📂   aefyles")
+                aether_ui.style_font_size(brand, 16)
+                aether_ui.style_font_bold(brand)
+                aether_ui.style_text_color(brand, 0.93, 0.95, 0.98)
+                aether_ui.divider()
+
                 home_btn = aether_ui.btn("⌂   Home") callback {
                     activate(grid_cell, label_cell, cwd_cell, home_p, 1)
                 }
