@@ -32,7 +32,7 @@ echo "Building app..."
 rm -rf "$FX"; mkdir -p "$FX/Alpha" "$FX/Beta" "$FX/zed"
 printf x >"$FX/readme.txt"; printf x >"$FX/notes.md"; printf x >"$FX/.secret"
 
-./build/fyles "$FX" >/tmp/aefyles_apptest.log 2>&1 &
+AEFYLES_DRIVER_PORT="$PORT" ./build/fyles "$FX" >/tmp/aefyles_apptest.log 2>&1 &
 APP=$!
 trap 'kill $APP 2>/dev/null; rm -rf "$FX"' EXIT
 

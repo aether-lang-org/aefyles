@@ -25,10 +25,8 @@ import glue
 
 extern println(s: string)
 
-// Grid columns in the file pane, and the AetherUIDriver test port (the
-// built-in HTTP automation server — see test_app.sh).
+// Grid columns in the file pane.
 const COLS = 4
-const TEST_PORT = 9223
 
 // ---- palette + styling ------------------------------------------------
 // One small palette, applied to widgets by handle after they're built (the
@@ -36,35 +34,41 @@ const TEST_PORT = 9223
 // example). Kept in helpers so the layout below stays readable and the look
 // stays consistent across the toolbar, the sidebar and the dynamic cells.
 
-style_toolbar_btn(h: int) {
+// A dark theme — the AppKit build renders under the system (dark) appearance,
+// so default control backgrounds are dark and default text is light; we lean
+// into that instead of fighting it. Light text everywhere (the favourites'
+// labels only render when the title colour is light on these styled buttons).
+
+// Accent nav button (Home / Up) in the sidebar.
+style_nav_btn(h: int) {
     aether_ui.style_bg_color(h, 0.23, 0.51, 0.96, 1.0)
     aether_ui.style_text_color(h, 1.0, 1.0, 1.0)
     aether_ui.style_corner_radius(h, 8.0)
     aether_ui.style_font_size(h, 13.0)
-    aether_ui.height(h, 30)
+    aether_ui.height(h, 34)
 }
 
+// A flat favourites row.
 style_sidebar_btn(h: int) {
-    aether_ui.style_bg_color(h, 1.0, 1.0, 1.0, 1.0)
-    aether_ui.style_text_color(h, 0.16, 0.20, 0.28)
+    aether_ui.style_bg_color(h, 0.20, 0.22, 0.27, 1.0)
+    aether_ui.style_text_color(h, 0.90, 0.92, 0.96)
     aether_ui.style_corner_radius(h, 8.0)
     aether_ui.style_font_size(h, 13.0)
-    aether_ui.width(h, 176)
-    aether_ui.height(h, 32)
+    aether_ui.height(h, 34)
 }
 
-// A folder/file card. Folders get a soft blue tint, files a neutral one, so
-// the grid reads by kind at a glance.
+// A folder/file card. Folders get a blue tint, files a neutral slate, so the
+// grid reads by kind at a glance.
 style_cell(h: int, is_dir: int) {
     if is_dir == 1 {
-        aether_ui.style_bg_color(h, 0.90, 0.94, 1.0, 1.0)
+        aether_ui.style_bg_color(h, 0.20, 0.31, 0.48, 1.0)
     } else {
-        aether_ui.style_bg_color(h, 0.96, 0.97, 0.98, 1.0)
+        aether_ui.style_bg_color(h, 0.19, 0.20, 0.24, 1.0)
     }
-    aether_ui.style_text_color(h, 0.13, 0.16, 0.22)
+    aether_ui.style_text_color(h, 0.90, 0.92, 0.96)
     aether_ui.style_corner_radius(h, 10.0)
     aether_ui.style_font_size(h, 13.0)
-    aether_ui.width(h, 176)
+    aether_ui.width(h, 158)
     aether_ui.height(h, 46)
 }
 
@@ -161,91 +165,93 @@ main() {
     pics_p = model.fav_path("Pictures")
     vids_p = model.fav_path("Videos")
 
-    aether_ui.window("aefyles", 940, 600) {
-        aether_ui.vstack(0) {
+    aether_ui.window("aefyles", 980, 640) {
+        // One horizontal split: a sidebar (nav + favourites) and the file
+        // grid. Putting the nav IN the sidebar avoids a separate top bar —
+        // which, being another stack with equal hugging, would split the
+        // vertical slack with the body and float in the middle (NSStackView
+        // drops height pins on stacked children, so a top toolbar can't be
+        // held to a fixed height). With a single body the grid fills cleanly.
+        root_v = aether_ui.hstack(0) {
 
-            // --- header band ---
-            header = aether_ui.hstack(10) {
-                title = aether_ui.text("📂   aefyles")
-                aether_ui.style_font_size(title, 18)
-                aether_ui.style_font_bold(title)
-                aether_ui.style_text_color(title, 1.0, 1.0, 1.0)
-                aether_ui.spacer()
-            }
-            aether_ui.style_bg_gradient(header, 0.23, 0.51, 0.96, 0.16, 0.39, 0.85, 0)
-            aether_ui.edge_insets(header, 14, 18, 14, 18)
-
-            // --- toolbar: Home | Up | live path ---
-            toolbar = aether_ui.hstack(10) {
+            sidebar = aether_ui.vstack(8) {
                 home_btn = aether_ui.btn("⌂   Home") callback {
                     activate(grid_cell, label_cell, cwd_cell, home_p, 1)
                 }
-                style_toolbar_btn(home_btn)
+                style_nav_btn(home_btn)
                 up_btn = aether_ui.btn("⬆   Up") callback {
                     go_up(grid_cell, label_cell, cwd_cell)
                 }
-                style_toolbar_btn(up_btn)
+                style_nav_btn(up_btn)
 
                 path_label = aether_ui.text(start)
-                aether_ui.style_font_size(path_label, 12)
-                aether_ui.style_text_color(path_label, 0.40, 0.45, 0.52)
+                aether_ui.style_font_size(path_label, 11)
+                aether_ui.style_text_color(path_label, 0.62, 0.66, 0.72)
                 glue.cell_set(label_cell, path_label)
+
+                aether_ui.divider()
+
+                fav_title = aether_ui.text("FAVOURITES")
+                aether_ui.style_font_size(fav_title, 11)
+                aether_ui.style_font_bold(fav_title)
+                aether_ui.style_text_color(fav_title, 0.55, 0.60, 0.68)
+
+                home_fav = aether_ui.btn("🏠   Home") callback {
+                    activate(grid_cell, label_cell, cwd_cell, home_p, 1)
+                }
+                style_sidebar_btn(home_fav)
+                docs_fav = aether_ui.btn("📄   Documents") callback {
+                    activate(grid_cell, label_cell, cwd_cell, docs_p, 1)
+                }
+                style_sidebar_btn(docs_fav)
+                down_fav = aether_ui.btn("⬇   Downloads") callback {
+                    activate(grid_cell, label_cell, cwd_cell, down_p, 1)
+                }
+                style_sidebar_btn(down_fav)
+                music_fav = aether_ui.btn("♪   Music") callback {
+                    activate(grid_cell, label_cell, cwd_cell, music_p, 1)
+                }
+                style_sidebar_btn(music_fav)
+                pics_fav = aether_ui.btn("🖼   Pictures") callback {
+                    activate(grid_cell, label_cell, cwd_cell, pics_p, 1)
+                }
+                style_sidebar_btn(pics_fav)
+                vids_fav = aether_ui.btn("🎬   Videos") callback {
+                    activate(grid_cell, label_cell, cwd_cell, vids_p, 1)
+                }
+                style_sidebar_btn(vids_fav)
                 aether_ui.spacer()
             }
-            aether_ui.style_bg_color(toolbar, 0.97, 0.98, 0.99, 1.0)
-            aether_ui.edge_insets(toolbar, 10, 16, 10, 16)
-            aether_ui.divider()
+            aether_ui.style_bg_color(sidebar, 0.13, 0.14, 0.17, 1.0)
+            aether_ui.edge_insets(sidebar, 16, 14, 16, 14)
+            aether_ui.width(sidebar, 240)
 
-            // --- body: Favourites sidebar | file grid ---
-            aether_ui.hstack(0) {
-
-                sidebar = aether_ui.vstack(6) {
-                    fav_title = aether_ui.text("FAVOURITES")
-                    aether_ui.style_font_size(fav_title, 11)
-                    aether_ui.style_font_bold(fav_title)
-                    aether_ui.style_text_color(fav_title, 0.45, 0.50, 0.58)
-
-                    home_fav = aether_ui.btn("🏠   Home") callback {
-                        activate(grid_cell, label_cell, cwd_cell, home_p, 1)
-                    }
-                    style_sidebar_btn(home_fav)
-                    docs_fav = aether_ui.btn("📄   Documents") callback {
-                        activate(grid_cell, label_cell, cwd_cell, docs_p, 1)
-                    }
-                    style_sidebar_btn(docs_fav)
-                    down_fav = aether_ui.btn("⬇   Downloads") callback {
-                        activate(grid_cell, label_cell, cwd_cell, down_p, 1)
-                    }
-                    style_sidebar_btn(down_fav)
-                    music_fav = aether_ui.btn("♪   Music") callback {
-                        activate(grid_cell, label_cell, cwd_cell, music_p, 1)
-                    }
-                    style_sidebar_btn(music_fav)
-                    pics_fav = aether_ui.btn("🖼   Pictures") callback {
-                        activate(grid_cell, label_cell, cwd_cell, pics_p, 1)
-                    }
-                    style_sidebar_btn(pics_fav)
-                    vids_fav = aether_ui.btn("🎬   Videos") callback {
-                        activate(grid_cell, label_cell, cwd_cell, vids_p, 1)
-                    }
-                    style_sidebar_btn(vids_fav)
-                    aether_ui.spacer()
-                }
-                aether_ui.style_bg_color(sidebar, 0.94, 0.95, 0.97, 1.0)
-                aether_ui.edge_insets(sidebar, 14, 12, 14, 12)
-                aether_ui.width(sidebar, 200)
-
-                aether_ui.scrollview() {
-                    file_grid = aether_ui.grid(COLS, 14, 14) {
-                    }
-                    aether_ui.edge_insets(file_grid, 16, 16, 16, 16)
-                    glue.cell_set(grid_cell, file_grid)
-                }
+            // The grid sits directly beside the sidebar. (A scrollview would
+            // give long-directory scrolling, but NSScrollView mis-positions a
+            // small document view so the cells vanish — tracked upstream; the
+            // direct grid renders its cells reliably.)
+            file_grid = aether_ui.grid(COLS, 16, 16) {
             }
+            aether_ui.edge_insets(file_grid, 18, 18, 18, 18)
+            glue.cell_set(grid_cell, file_grid)
         }
+        // The macOS surface sizes the window to the root view's fitting size
+        // (setContentView without a fill pin), so pin the root for a correctly
+        // sized window.
+        aether_ui.width(root_v, 980)
+        aether_ui.height(root_v, 600)
+        // Dark canvas behind everything so the cards and sidebar sit on one
+        // cohesive surface (the content area is otherwise the light window bg).
+        aether_ui.style_bg_color(root_v, 0.10, 0.11, 0.13, 1.0)
 
-        // Fill the grid for the starting directory, then arm the test server.
+        // Fill the grid for the starting directory.
         repaint(grid_cell, label_cell, cwd_cell)
-        aether_ui.enable_test_server(TEST_PORT)
+
+        // Arm the AetherUIDriver only when asked (AEFYLES_DRIVER_PORT) — so a
+        // normal run has no "Under Remote Control" banner; test_app.sh opts in.
+        dport = glue.driver_port()
+        if dport > 0 {
+            aether_ui.enable_test_server(dport)
+        }
     }
 }

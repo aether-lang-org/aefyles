@@ -14,12 +14,13 @@
 exports (
     cell_new, cell_get, cell_set,
     cwd_new, cwd_get, cwd_set,
-    open_path, start_dir
+    open_path, start_dir, driver_port
 )
 
 import std.collections (string_list_new, string_list_add, string_list_get, string_list_set)
 import std.list (list_new, list_add, list_free)
 import std.os (run_capture, aether_args_count, aether_args_get, os_getenv)
+import std.string (string_get_int)
 
 // ---- forward-reference cells -----------------------------------------
 // ref(...) is a compiler builtin (a heap intptr_t). We wrap it as cell_*
@@ -86,4 +87,16 @@ start_dir() -> string {
         return "/"
     }
     return h
+}
+
+// ---- AetherUIDriver test port ----------------------------------------
+// The HTTP automation server (and its "Under Remote Control" banner) is only
+// armed when AEFYLES_DRIVER_PORT is set — so normal runs are banner-free and
+// test_app.sh opts in. Returns the port, or 0 to leave the server off.
+driver_port() -> int {
+    p = os_getenv("AEFYLES_DRIVER_PORT")
+    if p == 0 {
+        return 0
+    }
+    return string_get_int(p)
 }

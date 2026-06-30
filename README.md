@@ -4,27 +4,26 @@ A file browser, in [Aether UI](https://github.com/aether-lang-org/aether-ui).
 
 A from-scratch port of [FyshOS/fyles](https://github.com/FyshOS/fyles) — a
 Fyne file browser written in Go — to Aether and its declarative widget DSL.
-One readable script *is* the application: a toolbar, a Favourites sidebar, and
-a scrolling grid of the current directory. Click a folder to descend, a file
-to open it with the OS default app.
+One readable script *is* the application: a sidebar (navigation + favourites)
+and a grid of the current directory. Click a folder to descend, a file to open
+it with the OS default app.
+
+![aefyles](img/screenshot.png)
 
 ```aether
-aether_ui.window("aefyles", 880, 560) {
-    aether_ui.vstack(0) {
-        aether_ui.hstack(8) {
-            aether_ui.btn("⌂  Home") callback { activate(grid_cell, label_cell, cwd_cell, home_p, 1) }
-            aether_ui.btn("⬆  Up")   callback { go_up(grid_cell, label_cell, cwd_cell) }
+aether_ui.window("aefyles", 980, 640) {
+    root_v = aether_ui.hstack(0) {
+        sidebar = aether_ui.vstack(8) {
+            home_btn = aether_ui.btn("⌂   Home") callback { activate(grid_cell, label_cell, cwd_cell, home_p, 1) }
+            up_btn   = aether_ui.btn("⬆   Up")   callback { go_up(grid_cell, label_cell, cwd_cell) }
             path_label = aether_ui.text(start)
+            aether_ui.divider()
+            // FAVOURITES + Home / Documents / Downloads / Music / Pictures / Videos
             ...
         }
-        aether_ui.hstack(0) {
-            aether_ui.vstack(4) { /* Favourites */ }
-            aether_ui.scrollview() {
-                file_grid = aether_ui.grid(COLS, 12, 12) { }
-            }
-        }
+        file_grid = aether_ui.grid(COLS, 16, 16) { }   // repainted on every navigation
     }
-    repaint(grid_cell, label_cell, cwd_cell)   // paint the starting directory
+    repaint(grid_cell, label_cell, cwd_cell)           // paint the starting directory
 }
 ```
 
@@ -80,23 +79,38 @@ Two layers, both runnable from a clean checkout:
 `test.sh`'s `main()` returns the failure count as its exit code; `test_app.sh`
 exits non-zero on any failed check. Both are green on macOS.
 
+Set `AEFYLES_DRIVER_PORT` to arm the built-in AetherUIDriver HTTP server (and
+its "Under Remote Control" banner) — off by default, so a normal run is clean.
+`test_app.sh` sets it automatically.
+
 ## What it does
 
-- **Toolbar** — Home, Up (parent), and a live path label.
-- **Favourites sidebar** — Home and the user directories (Documents,
-  Downloads, Music, Pictures, Videos).
-- **File grid** — the current directory: folders first, then files, sorted
-  case-insensitively, dotfiles hidden, with a `⬆  ..` cell to go up. Click a
-  folder to descend; click a file to open it with the OS default app
-  (`open` on macOS, `xdg-open` on Linux).
+- **Sidebar** — Home and Up (parent) navigation, the current path, and a
+  Favourites list (Home + the user directories: Documents, Downloads, Music,
+  Pictures, Videos).
+- **File grid** — the current directory: folders first (blue cards), then
+  files, sorted case-insensitively, dotfiles hidden, with a `⬆  ..` cell to go
+  up. Click a folder to descend; click a file to open it with the OS default
+  app (`open` on macOS, `xdg-open` on Linux).
 
-### Not (yet) ported
+### Notes & limitations
 
-fyles' richer Fyne-specific touches: the expandable filesystem **tree** (Fyne's
-`xWidget.FileTree` — approximated here by the Favourites sidebar + grid
-navigation), per-file **"Open With…"** menus, folder background art
-(`fancyfs`), and multi-panel windows. The architecture leaves room for them:
-they're more model + more DSL, not a redesign.
+The layout is shaped by what the aether-ui AppKit backend supports today
+(several gaps filed upstream as
+[aether-ui issues](https://github.com/aether-lang-org/aether-ui/issues)):
+
+- **Fixed window size.** The macOS surface sizes the window to its content's
+  fitting size rather than pinning the root to fill, and NSStackView drops
+  height constraints on stacked children — so the window opens at a set size
+  rather than reflowing on resize.
+- **Dark theme.** The build renders under the system (dark) appearance; aefyles
+  leans into it rather than fighting the default control colours.
+- **No right-click menus / file-type icons / reflowing grid** — aether-ui has
+  no secondary-click event, file-icon API, or wrapping grid yet (so cells use
+  emoji glyphs and a fixed column count). fyles' filesystem **tree**, **"Open
+  With…"** menus, folder background art (`fancyfs`), and multi-panel windows are
+  likewise not ported. The architecture leaves room for all of them: they're
+  more model + more DSL, not a redesign.
 
 ## Credits
 
