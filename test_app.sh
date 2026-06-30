@@ -54,9 +54,11 @@ mode = sys.argv[1]
 w = json.load(sys.stdin)
 grid = next((x["id"] for x in w if x["type"] == "widget"), None)
 if mode == "cells":
+    # print just the entry name (drop the leading glyph + spaces) so the test
+    # is robust to icon/spacing tweaks in the labels.
     for x in w:
         if x["parent"] == grid and x["type"] == "button":
-            print(x["text"])
+            print(x["text"].split(None, 1)[-1])
 elif mode == "path":
     for x in w:
         if x["type"] == "text" and x["text"].startswith("/"):
@@ -77,7 +79,7 @@ for x in w:
 }
 click() { curl -s -X POST --max-time 4 "http://127.0.0.1:$PORT/widget/$1/click" >/dev/null; sleep 0.6; }
 
-EXPECT_FULL=$'⬆  ..\n📁  Alpha\n📁  Beta\n📁  zed\n📄  notes.md\n📄  readme.txt'
+EXPECT_FULL=$'..\nAlpha\nBeta\nzed\nnotes.md\nreadme.txt'
 
 echo "Driving the live UI..."
 check "initial path label is the fixture root" "$(extract path)" "$FX"
@@ -85,7 +87,7 @@ check "grid shows folders-first, files next, hidden excluded, parent cell on top
 
 click "$(cell_id 'Alpha')"
 check "descended into Alpha (path label moved)" "$(extract path)" "$FX/Alpha"
-check "empty Alpha shows only the parent cell" "$(extract cells)" "⬆  .."
+check "empty Alpha shows only the parent cell" "$(extract cells)" ".."
 
 click "$(cell_id '..')"
 check "'⬆ ..' climbed back to the fixture root" "$(extract path)" "$FX"
