@@ -1,11 +1,18 @@
 #!/bin/bash
-# End-to-end functional test for the live app.
+# End-to-end functional test, driven entirely through the AetherUIDriver.
 #
-# Builds fyles.ae, launches it against a throwaway fixture directory, and
-# drives the real window through the AetherUIDriver (the HTTP automation
-# server aether_ui ships) to prove the things the headless model tests can't:
-# that the grid actually paints the model's listing, that clicking a folder
-# descends (path label moves, grid repaints), and that "⬆ .." climbs back.
+# AetherUIDriver is the HTTP automation server aether_ui ships. This test
+# builds fyles.ae, launches the real window, and exercises it ONLY over that
+# HTTP API — no special test hooks in the app — to prove what the headless
+# model tests can't:
+#
+#   GET  /widgets              enumerate the live widget tree (sidebar + grid)
+#   POST /widget/<id>/click    click a folder cell, a sidebar nav button, "⬆ .."
+#   GET  /widgets  (re-read)   assert the path label moved + the grid repainted
+#   GET  /screenshot           the window renders to a real PNG
+#
+# So: the grid paints the model's listing, clicking a folder descends, "⬆ .."
+# climbs back, and the sidebar Up/Home navigate — all via AetherUIDriver.
 #
 # Needs a window server (run it in a desktop session, not pure SSH) plus
 # curl and python3. Exit code is the number of failed checks.
@@ -77,6 +84,18 @@ for x in w:
         print(x["id"]); break
 ' "$1"
 }
+# id of a SIDEBAR button (not a grid cell) whose label contains the substring.
+nav_id() {
+    curl -s --max-time 4 "http://127.0.0.1:$PORT/widgets" | python3 -c '
+import sys, json
+sub = sys.argv[1]
+w = json.load(sys.stdin)
+grid = next((x["id"] for x in w if x["type"] == "widget"), None)
+for x in w:
+    if x["type"] == "button" and x["parent"] != grid and sub in x["text"]:
+        print(x["id"]); break
+' "$1"
+}
 click() { curl -s -X POST --max-time 4 "http://127.0.0.1:$PORT/widget/$1/click" >/dev/null; sleep 0.6; }
 
 EXPECT_FULL=$'..\nAlpha\nBeta\nzed\nnotes.md\nreadme.txt'
@@ -95,6 +114,25 @@ check "full listing restored after going up" "$(extract cells)" "$EXPECT_FULL"
 
 click "$(cell_id 'Beta')"
 check "the grid still navigates after a repaint (into Beta)" "$(extract path)" "$FX/Beta"
+
+# --- sidebar navigation, also via AetherUIDriver ---
+check "driver enumerates the sidebar Favourites (Documents present)" \
+      "$([ -n "$(nav_id 'Documents')" ] && echo yes)" "yes"
+
+click "$(nav_id 'Up')"
+check "sidebar 'Up' button climbs to the fixture root" "$(extract path)" "$FX"
+
+click "$(nav_id '⌂')"
+check "sidebar 'Home' button navigates to \$HOME" "$(extract path)" "$HOME"
+
+# --- the AetherUIDriver screenshot endpoint renders the window to a PNG ---
+SHOT=/tmp/aefyles_apptest_shot.png
+curl -s --max-time 6 "http://127.0.0.1:$PORT/screenshot" -o "$SHOT"
+shot_ok=no
+if [ -s "$SHOT" ] && head -c 8 "$SHOT" | od -An -tx1 | tr -d ' \n' | grep -qi '^89504e47'; then
+    [ "$(wc -c <"$SHOT")" -gt 5000 ] && shot_ok=yes
+fi
+check "GET /screenshot returns a non-trivial PNG of the window" "$shot_ok" "yes"
 
 echo
 if [ "$fail" = 0 ]; then echo "ALL APP TESTS PASSED"; else echo "$fail APP TEST(S) FAILED"; fi

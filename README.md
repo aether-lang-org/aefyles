@@ -70,14 +70,22 @@ Two layers, both runnable from a clean checkout:
                  # encoding, hidden filter, dir-first ordering, navigation,
                  # and reading a real fixture directory back.
 
-./test_app.sh    # end-to-end. Builds the app, launches it against a fixture,
-                 # and drives the real window over the AetherUIDriver (the HTTP
-                 # automation server aether_ui ships) to prove the live grid
-                 # paints, descends, and climbs back. Needs a desktop session.
+./test_app.sh    # end-to-end, driven entirely through the AetherUIDriver.
 ```
 
+**`test_app.sh` uses the AetherUIDriver** — the HTTP automation server aether_ui
+ships — to drive the *real* window with no special test hooks in the app. It
+launches fyles against a fixture and, over HTTP only:
+
+- `GET /widgets` — enumerates the live tree (sidebar + grid);
+- `POST /widget/<id>/click` — clicks folder cells, the `⬆ ..` cell, and the
+  sidebar **Up** / **Home** buttons;
+- re-reads `/widgets` to assert the path label moved and the grid repainted
+  (folders-first, hidden excluded, parent cell on top; descend → climb back);
+- `GET /screenshot` — confirms the window renders to a real PNG.
+
 `test.sh`'s `main()` returns the failure count as its exit code; `test_app.sh`
-exits non-zero on any failed check. Both are green on macOS.
+exits non-zero on any failed check. Both are green on macOS (11 driver checks).
 
 Set `AEFYLES_DRIVER_PORT` to arm the built-in AetherUIDriver HTTP server (and
 its "Under Remote Control" banner) — off by default, so a normal run is clean.
