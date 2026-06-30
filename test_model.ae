@@ -46,6 +46,10 @@ main() {
     testutil.tk_eq_str(t, model.display_name("/home/nic/Documents"), "Documents", "display_name nested")
     testutil.tk_eq_str(t, model.display_name("/"), "/", "display_name root")
 
+    // ---- path truncation for display ----
+    testutil.tk_eq_str(t, model.short_path("/etc", 12), "/etc", "short path returned unchanged")
+    testutil.tk_eq_str(t, model.short_path("/usr/local/bin/aether", 12), "…/bin/aether", "long path truncated with ellipsis tail")
+
     // ---- integration: read a real fixture directory ----
     base = "/tmp/aefyles_fixture"
     testutil.build_fixture(base)
@@ -73,6 +77,19 @@ main() {
     testutil.tk_eq_int(t, testutil.list_size(missing), 0, "unreadable dir -> empty list")
 
     testutil.teardown_fixture(base)
+
+    // ---- symlink resolution: a symlink to a dir browses as a dir ----
+    sbase = "/tmp/aefyles_symlink"
+    testutil.build_symlink_fixture(sbase)
+    sym = model.read_entries(sbase, 0)
+    testutil.tk_eq_int(t, testutil.list_size(sym), 4, "symlink fixture: 4 entries")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(sym, 0)), "linkdir", "[0] linkdir")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(sym, 0)), 1, "symlink->dir tagged as directory")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(sym, 1)), "realdir", "[1] realdir")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(sym, 1)), 1, "real dir tagged as directory")
+    testutil.tk_eq_str(t, model.entry_name(testutil.list_get(sym, 2)), "linkfile", "[2] linkfile")
+    testutil.tk_eq_int(t, model.entry_is_dir(testutil.list_get(sym, 2)), 0, "symlink->file stays a file")
+    testutil.teardown_symlink_fixture(sbase)
 
     proc_exit(testutil.tk_report(t))
 }

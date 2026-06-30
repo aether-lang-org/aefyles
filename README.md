@@ -37,9 +37,9 @@ whole point:
 
 | File | What it is | Lines |
 |------|-----------|------:|
-| [`model.ae`](model.ae) | **Pure, headless, fully tested.** A directory becomes a sorted, filtered list of `(kind, name)` entries; plus the path arithmetic for navigating (parent, display name, favourites). No UI. | 207 |
-| [`fyles.ae`](fyles.ae) | **The single declarative script.** The whole window described in the DSL. A directory change is just "ask the model again and repaint the grid". | 181 |
-| [`glue.ae`](glue.ae) | Thin non-UI glue: shared mutable cells, launching a file with the OS, picking the start directory. | 89 |
+| [`model.ae`](model.ae) | **Pure, headless, fully tested.** A directory becomes a sorted, filtered list of `(kind, name)` entries (stable O(n log n) merge sort; symlinks-to-dirs resolved); plus path arithmetic for navigating (parent, display name, favourites, truncation). No UI. | ~300 |
+| [`fyles.ae`](fyles.ae) | **The single declarative script.** The whole window described in the DSL. A directory change is just "ask the model again and repaint the grid". | ~330 |
+| [`glue.ae`](glue.ae) | Thin non-UI glue: shared mutable cells, launching a file with the OS, picking the start directory. | ~100 |
 
 fyles' imperative heart — `SetDir`, which mutates the panel — becomes a pure
 function `model.read_entries(dir, show_hidden)` that is *provably correct on
@@ -66,9 +66,10 @@ Point `build.sh` at a different aether-ui checkout with `AETHER_UI_DIR=...`.
 Two layers, both runnable from a clean checkout:
 
 ```bash
-./test.sh        # headless model tests — no display. 25 assertions:
-                 # encoding, hidden filter, dir-first ordering, navigation,
-                 # and reading a real fixture directory back.
+./test.sh        # headless model tests — no display. Encoding, hidden filter,
+                 # dir-first ordering across merge-sort passes, navigation,
+                 # path truncation, symlink-to-dir resolution, and reading real
+                 # fixture directories back.
 
 ./test_app.sh    # end-to-end, driven entirely through the AetherUIDriver.
 ```
@@ -82,10 +83,12 @@ launches fyles against a fixture and, over HTTP only:
   sidebar **Up** / **Home** buttons;
 - re-reads `/widgets` to assert the path label moved and the grid repainted
   (folders-first, hidden excluded, parent cell on top; descend → climb back);
+- `POST /widget/<id>/toggle` — flips the **Show hidden** checkbox and asserts
+  the dotfile appears, then hides again;
 - `GET /screenshot` — confirms the window renders to a real PNG.
 
 `test.sh`'s `main()` returns the failure count as its exit code; `test_app.sh`
-exits non-zero on any failed check. Both are green on macOS (11 driver checks).
+exits non-zero on any failed check. Both are green on macOS (14 driver checks).
 
 Set `AEFYLES_DRIVER_PORT` to arm the built-in AetherUIDriver HTTP server (and
 its "Under Remote Control" banner) — off by default, so a normal run is clean.
@@ -98,9 +101,12 @@ its "Under Remote Control" banner) — off by default, so a normal run is clean.
   Pictures, Videos).
 - **File grid** — the current directory: folders first (blue cards), then
   files, sorted case-insensitively, dotfiles hidden, with a `⬆  ..` cell to go
-  up. Cards brighten on hover; an empty directory shows an "empty" message.
-  Click a folder to descend; click a file to open it with the OS default app
-  (`open` on macOS, `xdg-open` on Linux).
+  up. Symlinks to directories browse as directories. Cards brighten on hover;
+  an empty directory shows an "empty" message. Click a folder to descend; click
+  a file to open it with the OS default app (`open` on macOS, `xdg-open` on
+  Linux).
+- **Show-hidden toggle** at the foot of the sidebar reveals/hides dotfiles
+  (live, no reload). Long paths are truncated with a leading `…`.
 
 **Performance.** The listing sort is a stable O(n log n) bottom-up merge sort
 (`model.ae`), so a directory with tens of thousands of entries sorts in

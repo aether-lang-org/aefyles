@@ -128,31 +128,33 @@ cell_label(name: string, is_dir: int) -> string {
 // (move the shared cwd, update the path label, repaint the grid) or open a
 // file with the OS. go_up() is just activate() on the parent.
 //
-// grid_cell and label_cell are forward-reference cells holding the grid and
-// path-label widget handles; cwd_cell holds the current directory. All three
-// are shared pointers so these top-level functions — reached from every
-// button's by-value-captured callback — act on the one live UI.
+// The *_cell args are shared forward-reference cells: grid_cell / label_cell
+// hold the grid and path-label widget handles, cwd_cell the current
+// directory, show_cell the show-hidden flag (0/1). They're shared pointers so
+// these top-level functions — reached from every button's by-value-captured
+// callback — all act on the one live UI.
 
-activate(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, target: string, is_dir: int) {
+activate(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, show_cell: ptr, target: string, is_dir: int) {
     if is_dir == 1 {
         glue.cwd_set(cwd_cell, target)
-        aether_ui.set_text(glue.cell_get(label_cell), target)
-        repaint(grid_cell, label_cell, cwd_cell)
+        shown = model.short_path(target, 34)
+        aether_ui.set_text(glue.cell_get(label_cell), shown)
+        repaint(grid_cell, label_cell, cwd_cell, show_cell)
     } else {
         glue.open_path(target)
     }
 }
 
-go_up(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr) {
+go_up(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, show_cell: ptr) {
     here = glue.cwd_get(cwd_cell)
-    activate(grid_cell, label_cell, cwd_cell, model.parent_of(here), 1)
+    activate(grid_cell, label_cell, cwd_cell, show_cell, model.parent_of(here), 1)
 }
 
 // Place one entry button into the grid at flat index `slot` (row-major).
-add_cell(grid_handle: int, grid_cell: ptr, label_cell: ptr, cwd_cell: ptr,
+add_cell(grid_handle: int, grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, show_cell: ptr,
          slot: int, label: string, target: string, is_dir: int) {
     cell = aether_ui.btn(label) callback {
-        activate(grid_cell, label_cell, cwd_cell, target, is_dir)
+        activate(grid_cell, label_cell, cwd_cell, show_cell, target, is_dir)
     }
     style_cell(cell, is_dir)
     row = slot / COLS
@@ -166,27 +168,28 @@ add_cell(grid_handle: int, grid_cell: ptr, label_cell: ptr, cwd_cell: ptr,
 // already at the filesystem root) navigates to the parent — fyles' "(Parent)"
 // row. Everything else is whatever model.read_entries returns, in order.
 
-repaint(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr) {
+repaint(grid_cell: ptr, label_cell: ptr, cwd_cell: ptr, show_cell: ptr) {
     grid_handle = glue.cell_get(grid_cell)
     aether_ui.clear_children(grid_handle)
 
     here = glue.cwd_get(cwd_cell)
+    show_hidden = glue.cell_get(show_cell)
     slot = 0
 
     if model.is_root(here) == 0 {
-        add_cell(grid_handle, grid_cell, label_cell, cwd_cell,
+        add_cell(grid_handle, grid_cell, label_cell, cwd_cell, show_cell,
                  slot, "⬆   ..", model.parent_of(here), 1)
         slot = slot + 1
     }
 
-    listing = model.read_entries(here, 0)
+    listing = model.read_entries(here, show_hidden)
     n = model.entries_len(listing)
     for (i = 0; i < n; i = i + 1) {
         e = model.entries_at(listing, i)
         name = model.entry_name(e)
         is_dir = model.entry_is_dir(e)
         target = model.child_path(here, name)
-        add_cell(grid_handle, grid_cell, label_cell, cwd_cell,
+        add_cell(grid_handle, grid_cell, label_cell, cwd_cell, show_cell,
                  slot, cell_label(name, is_dir), target, is_dir)
         slot = slot + 1
     }
@@ -212,6 +215,7 @@ main() {
     cwd_cell = glue.cwd_new(start)
     grid_cell = glue.cell_new(0)
     label_cell = glue.cell_new(0)
+    show_cell = glue.cell_new(0)   // show-hidden flag (0/1), toggled in the sidebar
 
     // Favourite destinations, resolved once and captured by each button.
     home_p = model.home_dir()
@@ -238,15 +242,15 @@ main() {
                 aether_ui.divider()
 
                 home_btn = aether_ui.btn("⌂   Home") callback {
-                    activate(grid_cell, label_cell, cwd_cell, home_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, home_p, 1)
                 }
                 style_nav_btn(home_btn)
                 up_btn = aether_ui.btn("⬆   Up") callback {
-                    go_up(grid_cell, label_cell, cwd_cell)
+                    go_up(grid_cell, label_cell, cwd_cell, show_cell)
                 }
                 style_nav_btn(up_btn)
 
-                path_label = aether_ui.text(start)
+                path_label = aether_ui.text(model.short_path(start, 34))
                 aether_ui.style_font_size(path_label, 11)
                 aether_ui.style_text_color(path_label, 0.62, 0.66, 0.72)
                 glue.cell_set(label_cell, path_label)
@@ -259,30 +263,38 @@ main() {
                 aether_ui.style_text_color(fav_title, 0.55, 0.60, 0.68)
 
                 home_fav = aether_ui.btn("🏠   Home") callback {
-                    activate(grid_cell, label_cell, cwd_cell, home_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, home_p, 1)
                 }
                 style_sidebar_btn(home_fav)
                 docs_fav = aether_ui.btn("📄   Documents") callback {
-                    activate(grid_cell, label_cell, cwd_cell, docs_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, docs_p, 1)
                 }
                 style_sidebar_btn(docs_fav)
                 down_fav = aether_ui.btn("⬇   Downloads") callback {
-                    activate(grid_cell, label_cell, cwd_cell, down_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, down_p, 1)
                 }
                 style_sidebar_btn(down_fav)
                 music_fav = aether_ui.btn("♪   Music") callback {
-                    activate(grid_cell, label_cell, cwd_cell, music_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, music_p, 1)
                 }
                 style_sidebar_btn(music_fav)
                 pics_fav = aether_ui.btn("🖼   Pictures") callback {
-                    activate(grid_cell, label_cell, cwd_cell, pics_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, pics_p, 1)
                 }
                 style_sidebar_btn(pics_fav)
                 vids_fav = aether_ui.btn("🎬   Videos") callback {
-                    activate(grid_cell, label_cell, cwd_cell, vids_p, 1)
+                    activate(grid_cell, label_cell, cwd_cell, show_cell, vids_p, 1)
                 }
                 style_sidebar_btn(vids_fav)
+
                 aether_ui.spacer()
+
+                aether_ui.divider()
+                hidden_toggle = aether_ui.toggle("Show hidden") callback |active: int| {
+                    glue.cell_set(show_cell, active)
+                    repaint(grid_cell, label_cell, cwd_cell, show_cell)
+                }
+                aether_ui.style_text_color(hidden_toggle, 0.78, 0.82, 0.88)
             }
             aether_ui.style_bg_color(sidebar, 0.13, 0.14, 0.17, 1.0)
             aether_ui.edge_insets(sidebar, 16, 14, 16, 14)
@@ -307,7 +319,7 @@ main() {
         aether_ui.style_bg_color(root_v, 0.10, 0.11, 0.13, 1.0)
 
         // Fill the grid for the starting directory.
-        repaint(grid_cell, label_cell, cwd_cell)
+        repaint(grid_cell, label_cell, cwd_cell, show_cell)
 
         // Arm the AetherUIDriver only when asked (AEFYLES_DRIVER_PORT) — so a
         // normal run has no "Under Remote Control" banner; test_app.sh opts in.

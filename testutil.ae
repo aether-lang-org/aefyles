@@ -10,12 +10,13 @@
 exports (
     tk_new, tk_ok, tk_eq_str, tk_eq_int, tk_report,
     list_size, list_get,
-    build_fixture, teardown_fixture
+    build_fixture, teardown_fixture,
+    build_symlink_fixture, teardown_symlink_fixture
 )
 
 import std.collections (string_list_new, string_list_add, string_list_get, string_list_size)
 import std.string (string_compare, string_from_int)
-import std.fs (mkdir_p, write, delete, delete_dir)
+import std.fs (mkdir_p, write, delete, delete_dir, symlink)
 
 extern println(s: string)
 
@@ -115,5 +116,26 @@ teardown_fixture(base: string) {
     delete_dir("${base}/Beta")
     delete_dir("${base}/alpha")
     delete_dir("${base}/Gamma")
+    delete_dir(base)
+}
+
+// A second fixture for symlink resolution: a real dir + a real file, plus a
+// symlink to each. The model should tag linkdir as a directory (follows the
+// link) and linkfile as a file.
+//   linkdir -> realdir   linkfile -> realfile.txt
+build_symlink_fixture(base: string) {
+    teardown_symlink_fixture(base)
+    mkdir_p(base)
+    mkdir_p("${base}/realdir")
+    write("${base}/realfile.txt", "x")
+    _e1 = symlink("${base}/realdir", "${base}/linkdir")
+    _e2 = symlink("${base}/realfile.txt", "${base}/linkfile")
+}
+
+teardown_symlink_fixture(base: string) {
+    delete("${base}/linkdir")        // unlink removes the symlink, not the target
+    delete("${base}/linkfile")
+    delete("${base}/realfile.txt")
+    delete_dir("${base}/realdir")
     delete_dir(base)
 }

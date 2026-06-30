@@ -97,6 +97,12 @@ for x in w:
 ' "$1"
 }
 click() { curl -s -X POST --max-time 4 "http://127.0.0.1:$PORT/widget/$1/click" >/dev/null; sleep 0.6; }
+toggle_w() { curl -s -X POST --max-time 4 "http://127.0.0.1:$PORT/widget/$1/toggle" >/dev/null; sleep 0.6; }
+toggle_id() {
+    curl -s --max-time 4 "http://127.0.0.1:$PORT/widgets" | python3 -c '
+import sys, json
+print(next((x["id"] for x in json.load(sys.stdin) if x["type"] == "toggle"), ""))'
+}
 # yes if any text widget currently reads as the empty-folder message.
 empty_present() {
     curl -s --max-time 4 "http://127.0.0.1:$PORT/widgets" | python3 -c '
@@ -109,6 +115,15 @@ EXPECT_FULL=$'..\nAlpha\nBeta\nzed\nnotes.md\nreadme.txt'
 echo "Driving the live UI..."
 check "initial path label is the fixture root" "$(extract path)" "$FX"
 check "grid shows folders-first, files next, hidden excluded, parent cell on top" "$(extract cells)" "$EXPECT_FULL"
+
+# show-hidden toggle: reveal .secret, then hide it again (.secret sorts first
+# among files, after the dirs).
+EXPECT_HIDDEN=$'..\nAlpha\nBeta\nzed\n.secret\nnotes.md\nreadme.txt'
+TID="$(toggle_id)"
+toggle_w "$TID"
+check "'Show hidden' toggle reveals the dotfile" "$(extract cells)" "$EXPECT_HIDDEN"
+toggle_w "$TID"
+check "toggling 'Show hidden' off restores the filtered listing" "$(extract cells)" "$EXPECT_FULL"
 
 click "$(cell_id 'Alpha')"
 check "descended into Alpha (path label moved)" "$(extract path)" "$FX/Alpha"

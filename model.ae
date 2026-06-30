@@ -15,10 +15,11 @@ exports (
     entry_make, entry_is_dir, entry_name,
     is_hidden, read_entries, sort_entries, entry_cmp,
     entries_len, entries_at, child_path,
-    parent_of, display_name, is_root, home_dir, fav_path
+    parent_of, display_name, is_root, home_dir, fav_path,
+    is_dir_kind, short_path
 )
 
-import std.fs (list_dir, file_stat, dir_list_count, dir_list_get, dir_list_free)
+import std.fs (list_dir, file_stat, realpath, dir_list_count, dir_list_get, dir_list_free)
 import std.collections (string_list_new, string_list_add, string_list_get, string_list_set, string_list_size, string_list_free)
 import std.string (string_length, string_substring, string_starts_with, string_compare, string_to_lower, string_concat)
 import std.path (path_basename, path_dirname, path_join)
@@ -26,6 +27,27 @@ import std.os (os_getenv)
 
 // fs.file_stat kind tags (std/fs/aether_fs.c): 1=file, 2=dir, 3=symlink, 4=other.
 const KIND_DIR = 2
+const KIND_SYMLINK = 3
+
+// Is `full` a directory for browsing purposes? file_stat uses lstat, so a
+// symlink reports kind 3 even when it points at a directory — fyles follows
+// such links (storage.CanList), so we resolve the target and re-stat. A
+// dangling or non-dir symlink stays a "file" (clicking it just tries to open).
+is_dir_kind(full: string, kind: int) -> int {
+    if kind == KIND_DIR {
+        return 1
+    }
+    if kind == KIND_SYMLINK {
+        real, _rk, rmsg = realpath(full)
+        if string_compare(rmsg, "") == 0 {
+            sk, _ss, _sm, _se = file_stat(real)
+            if sk == KIND_DIR {
+                return 1
+            }
+        }
+    }
+    return 0
+}
 
 // ---- Entry encoding ---------------------------------------------------
 // An entry is one string: byte 0 is the kind tag ('d' = directory,
@@ -91,10 +113,7 @@ read_entries(path: string, show_hidden: int) -> ptr {
         if show == 1 {
             full = path_join(path, name)
             kind, _size, _mtime, _serr = file_stat(full)
-            is_dir = 0
-            if kind == KIND_DIR {
-                is_dir = 1
-            }
+            is_dir = is_dir_kind(full, kind)
             _added = string_list_add(out, entry_make(is_dir, name))
         }
     }
@@ -250,6 +269,19 @@ display_name(path: string) -> string {
         return "/"
     }
     return path_basename(path)
+}
+
+// Truncate a path to at most `max` characters for display, keeping the tail
+// (the part that changes as you navigate) with a leading "…". Short paths are
+// returned unchanged. Pure string math — unit-tested.
+short_path(path: string, max: int) -> string {
+    n = string_length(path)
+    if n <= max {
+        return path
+    }
+    start = n - (max - 1)
+    tail = string_substring(path, start, n)
+    return string_concat("…", tail)
 }
 
 // ---- Favourites -------------------------------------------------------
